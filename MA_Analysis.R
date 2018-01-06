@@ -104,10 +104,62 @@ NPOTA_State <- Uniq_NPOTA_Owners %>%
 NPOTA_City <- Uniq_NPOTA_Owners %>% 
   left_join(y = select(zip, ZIP, CityName, StateAbbr), by = c("registration_zip_code" = "ZIP")) %>% 
   group_by(CityName) %>% 
-  summarize("count" = n()) %>% 
+  summarize("count" = fn()) %>% 
   arrange(desc(count))
 
 #add state population info
 state_pop <- read_csv('state_pop.csv')
 zip_pop <- read_csv('Zip Pop by Age v2.csv')
 zip_HH <- read_csv('Households ZIP Indexed.csv')
+
+#set of unique email addresses for summary comparisons
+Uniq_MA_main <- MA_main %>%
+  filter(duplicated(email) == FALSE)
+
+Uniq_OPOTA_Owners <- Old_POTA_owners %>% 
+  filter(duplicated(email) == FALSE)
+
+Uniq_Main_zip <- Uniq_MA_main %>% 
+  left_join(y = select(zip_HH, ZIP, HHI_Median, HHI_Mean), by = c("registration_zip_code" = "ZIP")) %>% 
+  filter(!is.na(HHI_Mean)) %>% 
+  mutate("HHI_Mean_Index" = HHI_Mean/mean(HHI_Mean))
+
+Uniq_Main_zip <- Uniq_MA_main %>% 
+  left_join(y = select(zip_HH, ZIP, HHI_Median, HHI_Mean), by = c("registration_zip_code" = "ZIP")) %>% 
+  filter(!is.na(HHI_Mean)) %>% 
+  mutate("HHI_Mean_Index" = HHI_Mean/mean(HHI_Mean))
+
+NPOTA_Owners_zip <- Uniq_NPOTA_Owners %>% 
+  left_join(y = select(zip_HH, ZIP, HHI_Median, HHI_Mean), by = c("registration_zip_code" = "ZIP")) %>% 
+  filter(!is.na(HHI_Mean)) %>% 
+  mutate("HHI_Mean_Index" = HHI_Mean/mean(HHI_Mean))
+
+#plot HHI Mean index v locker size -> do people who live where HHI is higher own more movies?
+#remove locker_size > 2000 so the plot makes some sense
+library(ggplot2)
+ggplot(Uniq_Main_zip, aes(x = HHI_Mean_Index, y = locker_size)) + geom_point(position = "jitter", alpha = 0.3) + ylim(c(0,2000))
+ggplot(Uniq_Main_zip, aes(x = HHI_Mean_Index, y = locker_size)) + geom_col(width = 0.25, position = "identity", na.rm = TRUE) + ylim(c(0,10000))
+
+#compare with plot of NPOTA owners
+ggplot(NPOTA_Owners_zip, aes(x = HHI_Mean_Index, y = locker_size)) + geom_col(width = 0.25, position = "identity", na.rm = FALSE) + ylim(c(0,10000))
+
+#create data set for plotting mean locker size by level of mean HHI
+HHIMI_plot <- Uniq_Main_zip %>% 
+  mutate("HHIMI_Level" = ifelse(between(HHI_Mean_Index, 0, 0.7),1,
+                                ifelse(between(HHI_Mean_Index,0.7001, 1.3),2,
+                                       ifelse(between(HHI_Mean_Index,1.3001, 2.0),3,
+                                              ifelse(between(HHI_Mean_Index,2.001, 3.0),4,
+                                                     ifelse(between(HHI_Mean_Index,3.001, 4.0),5,6)))))) %>% 
+  group_by(HHIMI_Level) %>% 
+  summarize("Mean_LS" = mean(locker_size), "count" = n(), "IQR" = IQR(locker_size)) %>% 
+  mutate("lower" = Mean_LS - IQR, "upper" = Mean_LS + IQR)
+
+#create plot to show mean locker size v level of mean HHI
+g <- ggplot(HHIMI_plot, aes(x = HHIMI_Level, y = Mean_LS, colour = "blue"))
+g + geom_col(position = "dodge") + geom_errorbar(aes(ymin = lower, ymax = upper), position = "dodge", width = 0.25, colour = "black")
+
+#  are there any interesting relationships between POTA ownership and zip code age/sex characteristics
+Uniq_MA_age <- Uniq_MA_main %>% 
+  left_join(y = select(zip_pop, ZIP, Median_age, MF_Ratio), by = c("registration_zip_code" = "ZIP")) %>% 
+  filter(!is.na(Median_age, !is.na(MF_Ratio)))
+  
